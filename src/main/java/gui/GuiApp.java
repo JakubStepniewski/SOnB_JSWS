@@ -13,6 +13,8 @@ import javafx.scene.control.ScrollPane;
 
 public class GuiApp extends Application {
 
+    short raid; // 0 - RAID 0 | 1 - RAID 1 | 2 - RAID 2
+
     @Override
     public void start(Stage primaryStage) {
         String appTitle = "RAID FaultSim";
@@ -52,6 +54,11 @@ public class GuiApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
     }
+
+//    public static void selectRAID(short choice)
+//    {
+//        this.raid = choice;
+//    }
 
     public static void startApp(String[] args) {
         launch(args);

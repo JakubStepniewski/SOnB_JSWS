@@ -12,7 +12,7 @@ public class Header {
         this.hContainer = new HBox(10);
 
         // Style
-        hContainer.setStyle("-fx-background-color: green;");
+        hContainer.setStyle("-fx-background-color: rgb(8, 143, 143);");
 
         Button btnStart = new Button("Start Simulation");
         Button btnReset = new Button("Reset");
