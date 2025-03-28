@@ -197,10 +197,53 @@ public class Disk {
 
     }
 
-    public void read(){
+    public void write(byte[] textBytes) {
+        if (!isActive) {
+            System.out.println("Disk is inactive! Cannot write data.");
+            return;
+        }
+
+        // Lock to ensure thread safety when modifying shared resources
+        lock.lock();
+        try {
+            int writtenBytes = 0;
+
+            for (int i = 0; i < numSectors; i++) {
+                if (!fullSectors[i] && !badSectors[i] && writtenBytes < textBytes.length) {
+
+                    Arrays.fill(data[i], (byte) 0);
+
+                    int bytesToWrite = Math.min(sectorSize, textBytes.length - writtenBytes);
+
+                    System.arraycopy(textBytes, writtenBytes, data[i], 0, bytesToWrite);
+
+                    writtenBytes += bytesToWrite;
+
+                    fullSectors[i] = true;
+
+                    // Update sector color to green
+                    Rectangle sector = (Rectangle) grid.getChildren().get(i);
+                    sector.setFill(Color.GREEN);
+
+                    if (writtenBytes >= textBytes.length) {
+                        break;
+                    }
+                }
+            }
+
+            // Jeśli nie wystarczyło miejsca, wyświetlamy komunikat
+            if (writtenBytes < textBytes.length) {
+                System.out.println("Not enough space to write full data!");
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public byte[] read(){
         if (!isActive) {
             System.out.println("Disk is inactive. Cannot read.");
-            return;
+            return new byte[0];
         }
 
         StringBuilder output = new StringBuilder();
@@ -216,6 +259,7 @@ public class Disk {
         }
 
         System.out.println("Disk Data: " + output.toString().trim());
+        return new byte[0];
     }
 
     public void reset(GridPane grid) {

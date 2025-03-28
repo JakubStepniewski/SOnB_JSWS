@@ -9,6 +9,10 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
 import javafx.scene.control.ScrollPane;
+import logic.Disk;
+
+import java.util.ArrayList;
+import java.util.List;
 
 
 public class GuiApp extends Application {
@@ -20,22 +24,40 @@ public class GuiApp extends Application {
         String appTitle = "RAID FaultSim";
         primaryStage.setTitle(appTitle);
 
+
+        List<Disk> disks = new ArrayList<>();
+
         // Main app container
         VBox root = new VBox();
+
+        // Create disks
+        Disk disk_1 = new Disk(128, 32, root, "Dysk 1");
+        Disk disk_2 = new Disk(128, 32, root ,"Dysk 2");
+        Disk disk_3 = new Disk(128, 32, root, "Dysk 3");
+        Disk disk_4 = new Disk(128, 32, root, "Dysk 4");
+
+        // Add disks to list
+        disks.add(disk_1);
+        disks.add(disk_2);
+        disks.add(disk_3);
+        disks.add(disk_4);
 
 
         // Scrollable container
         VBox scrollableContent = new VBox(20);
         scrollableContent.setPadding(new Insets(10));
 
-        // Sticky header
-        Header header = new Header(root);
+
 
         // RAID container
-        RaidContainer raidContainer = new RaidContainer(scrollableContent);
+        RaidContainer raidContainer = new RaidContainer(scrollableContent,disks);
 
         // Disks container
-        DisksContainer diskContainer = new DisksContainer(scrollableContent);
+        DisksContainer diskContainer = new DisksContainer(scrollableContent,disks);
+
+        // Sticky header
+        Header header = new Header(root,raidContainer,disks);
+
 
         // Add content to root view
         scrollableContent.getChildren().addAll(raidContainer.render(),diskContainer.render());

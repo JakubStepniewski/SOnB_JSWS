@@ -15,12 +15,12 @@ public class DisksContainer {
     private final VBox vContainer;
     private final String containerLabel = "Disks";
 
-    private final ArrayList<Disk> diskList;
+    private final List<Disk> diskList;
 
-    public DisksContainer(Region parent)
+    public DisksContainer(Region parent,List<Disk> disks)
     {
         this.vContainer = new VBox(10);
-        this.diskList = new ArrayList<Disk>();
+        this.diskList = disks;
         Text containerHeadline = new Text(containerLabel);
         containerHeadline.setFont(Font.font("Arial",20));
         HBox innerHContainer = new HBox(10);
@@ -28,21 +28,12 @@ public class DisksContainer {
         VBox innerVContainer_1 = new VBox(10);
         VBox innerVContainer_2 = new VBox(10);
 
-        // Create disks
-        Disk disk_1 = new Disk(128, 32, parent, "Dysk 1");
-        Disk disk_2 = new Disk(128, 32, parent ,"Dysk 2");
-        Disk disk_3 = new Disk(128, 32, parent, "Dysk 3");
-        Disk disk_4 = new Disk(128, 32, parent, "Dysk 4");
-
-        // Adding disks to list
-        diskList.add(disk_1);
-        diskList.add(disk_2);
-        diskList.add(disk_3);
-        diskList.add(disk_4);
 
 
-        innerVContainer_1.getChildren().addAll(disk_1.render(),disk_2.render());
-        innerVContainer_2.getChildren().addAll(disk_3.render(),disk_4.render());
+
+
+        innerVContainer_1.getChildren().addAll(disks.get(0).render(),disks.get(1).render());
+        innerVContainer_2.getChildren().addAll(disks.get(2).render(),disks.get(3).render());
 
         innerHContainer.getChildren().addAll(innerVContainer_1,innerVContainer_2);
 
