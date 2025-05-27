@@ -1,5 +1,6 @@
 package logic;
 
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -42,6 +43,8 @@ public class Disk {
         this.grid = new GridPane();
 
 
+
+
         // Disk header
         HBox diskHeader = new HBox(10);
         diskHeader.setAlignment(Pos.CENTER_LEFT);
@@ -57,9 +60,9 @@ public class Disk {
 
         // onclick
         btnWrite.setOnMouseClicked(event-> write());
-        btnRead.setOnMouseClicked(event->read());
+        btnRead.setOnMouseClicked(event->readAsStringDialog());
         btnToogleFailedState.setOnMouseClicked(event->toogleActiveMode(isActive,grid,btnToogleFailedState));
-        btnReset.setOnMouseClicked(event->reset(grid));
+        btnReset.setOnMouseClicked(event -> reset());
 
 
         // Space beetwen diskName and diskHeaderBtnContainer
@@ -92,6 +95,51 @@ public class Disk {
     public VBox render() {
         return diskContainer;
     }
+
+    public boolean isActive() {
+        return this.isActive;
+    }
+
+    public int getNumSectors() {
+        return this.numSectors;
+    }
+
+    public boolean isSectorBad(int i) {
+        return badSectors[i];
+    }
+
+    public boolean isSectorFull(int i) {
+        return fullSectors[i];
+    }
+
+    public byte[] readSector(int i) {
+        lock.lock();
+        try {
+            if (i >= 0 && i < numSectors && fullSectors[i]) {
+                return Arrays.copyOf(data[i], sectorSize);
+            }
+            return new byte[sectorSize]; // Zwróć zera jeśli pusty
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void writeSector(int i, byte[] bytes) {
+        if (!isActive || i < 0 || i >= numSectors || bytes.length != sectorSize) return;
+
+        lock.lock();
+        try {
+            System.arraycopy(bytes, 0, data[i], 0, sectorSize);
+            fullSectors[i] = true;
+            badSectors[i] = false;
+
+            Rectangle sector = (Rectangle) grid.getChildren().get(i);
+            sector.setFill(Color.GREEN);
+        } finally {
+            lock.unlock();
+        }
+    }
+
 
     public void failSector(int sectorIndex, Rectangle sector) {
         if(isActive)
@@ -240,39 +288,106 @@ public class Disk {
         }
     }
 
-    public byte[] read(){
+
+    public byte[] read() {
         if (!isActive) {
             System.out.println("Disk is inactive. Cannot read.");
             return new byte[0];
         }
 
-        StringBuilder output = new StringBuilder();
         lock.lock();
         try {
+            int totalBytes = 0;
+
+            // Policz, ile danych faktycznie mamy
             for (int i = 0; i < numSectors; i++) {
                 if (fullSectors[i] && !badSectors[i]) {
-                    output.append(new String(data[i])).append(" ");
+                    totalBytes += sectorSize;
                 }
             }
+
+            byte[] result = new byte[totalBytes];
+            int pos = 0;
+
+            for (int i = 0; i < numSectors; i++) {
+                if (fullSectors[i] && !badSectors[i]) {
+                    System.arraycopy(data[i], 0, result, pos, sectorSize);
+                    pos += sectorSize;
+                }
+            }
+
+            return result;
         } finally {
             lock.unlock();
         }
-
-        System.out.println("Disk Data: " + output.toString().trim());
-        return new byte[0];
     }
 
-    public void reset(GridPane grid) {
-        setActive(true);
+    public void readAsStringDialog() {
+        byte[] bytes = read();
+        String text = new String(bytes).trim();
 
+        Stage dialogWindow = new Stage();
+        dialogWindow.initModality(Modality.APPLICATION_MODAL);
+        dialogWindow.setTitle("Disk Read: " + diskLabel);
+
+        VBox dialogVBox = new VBox(10);
+        dialogVBox.setAlignment(Pos.CENTER);
+        dialogVBox.setPadding(new Insets(10));
+
+        TextArea textArea = new TextArea(text);
+        textArea.setEditable(false);
+        textArea.setWrapText(true);
+
+        Button btnClose = new Button("Close");
+        btnClose.setOnAction(e -> dialogWindow.close());
+
+        dialogVBox.getChildren().addAll(textArea, btnClose);
+
+        Scene dialogScene = new Scene(dialogVBox, 400, 250);
+        dialogWindow.setScene(dialogScene);
+        dialogWindow.show();
+    }
+
+    public byte[] readWithBadSectors() {
+        lock.lock();
+        try {
+            byte[] result = new byte[numSectors * sectorSize];
+            int pos = 0;
+
+            for (int i = 0; i < numSectors; i++) {
+                if (fullSectors[i]) {
+                    if (!badSectors[i]) {
+                        System.arraycopy(data[i], 0, result, pos, sectorSize);
+                    } else {
+                        Arrays.fill(result, pos, pos + sectorSize, (byte) 0);
+                    }
+                    pos += sectorSize;
+                }
+            }
+
+            return Arrays.copyOf(result, pos);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+
+
+
+    public void reset() {
+        setActive(true);
         for (int i = 0; i < numSectors; i++) {
             badSectors[i] = false;
             fullSectors[i] = false;
             Arrays.fill(data[i], (byte) 0); // Reset the data
 
             Rectangle sector = (Rectangle) grid.getChildren().get(i);
-            sector.setFill(Color.rgb(206, 212, 218)); // Reset the sector color to default (inactive)
+            sector.setFill(Color.rgb(206, 212, 218)); // default color
         }
+    }
+
+    public int getSectorSize() {
+        return this.sectorSize;
     }
 }
 

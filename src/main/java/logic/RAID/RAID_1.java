@@ -4,6 +4,14 @@ import logic.Disk;
 import javafx.scene.control.TextInputDialog;
 import java.util.List;
 import java.util.Optional;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 public class RAID_1 {
     private final List<Disk> diskList;
@@ -24,25 +32,90 @@ public class RAID_1 {
         result.ifPresent(data -> {
             byte[] dataBytes = data.getBytes();
 
-            // Zapisywanie na Dysk 1 i Dysk 2 (pierwsza kopia)
-            diskList.get(0).write(dataBytes);
-            diskList.get(1).write(dataBytes);
+            for (int i = 0; i < diskList.size(); i++) {
+                Disk disk = diskList.get(i);
+                if (disk.isActive()) {
+                    disk.write(dataBytes);
+                    System.out.println("Written to disk " + i);
+                } else {
+                    System.out.println("Skipped disk " + i + " (inactive)");
+                }
+            }
 
-            // Zapisywanie na Dysk 3 i Dysk 4 (druga kopia)
-            diskList.get(2).write(dataBytes);
-            diskList.get(3).write(dataBytes);
-
-            System.out.println("Data successfully written using RAID 1.");
+            System.out.println("RAID 1 write completed (partial if some disks were inactive).");
         });
     }
 
     public void readData() {
-        // Odczytujemy dane z pierwszej pary (Dysk 1)
-        byte[] data = diskList.get(0).read();
-        if (data != null) {
-            System.out.println("Data read from RAID 1: " + new String(data));
-        } else {
-            System.out.println("No data found on RAID 1.");
+        System.out.println("RAID 1 – Reading with sector-level recovery");
+
+        int numSectors = diskList.get(0).getNumSectors();
+        int sectorSize = diskList.get(0).getSectorSize();
+
+        // Rekonstrukcja sektorów
+        for (int i = 0; i < diskList.size(); i += 2) {
+            Disk a = diskList.get(i);
+            Disk b = diskList.get(i + 1);
+
+            for (int s = 0; s < numSectors; s++) {
+                boolean aBad = a.isSectorBad(s);
+                boolean bBad = b.isSectorBad(s);
+                boolean aFull = a.isSectorFull(s);
+                boolean bFull = b.isSectorFull(s);
+
+                if (aBad && bFull && !bBad) {
+                    byte[] data = b.readSector(s);
+                    a.writeSector(s, data);
+                    System.out.println("Reconstructed sector " + s + " on disk " + i);
+                } else if (bBad && aFull && !aBad) {
+                    byte[] data = a.readSector(s);
+                    b.writeSector(s, data);
+                    System.out.println("Reconstructed sector " + s + " on disk " + (i + 1));
+                }
+            }
         }
+
+        // Odczyt danych z pierwszego dostępnego, aktywnego dysku
+        for (Disk d : diskList) {
+            if (d.isActive()) {
+                byte[] data = d.read(); // teraz powinno być naprawione
+                if (data.length > 0 && !isEmptyOrZero(data)) {
+                    showTextDialog("RAID 1 – Read Data", new String(data).trim());
+                    return;
+                }
+            }
+        }
+
+        showTextDialog("RAID 1 – Read Data", "[no data found]");
+    }
+
+
+    private boolean isEmptyOrZero(byte[] data) {
+        if (data == null || data.length == 0) return true;
+        for (byte b : data) {
+            if (b != 0) return false;
+        }
+        return true;
+    }
+
+    private void showTextDialog(String title, String content) {
+        Stage dialog = new Stage();
+        dialog.initModality(Modality.APPLICATION_MODAL);
+        dialog.setTitle(title);
+
+        TextArea textArea = new TextArea(content);
+        textArea.setWrapText(true);
+        textArea.setEditable(false);
+
+        Button btnClose = new Button("Close");
+        btnClose.setOnAction(e -> dialog.close());
+
+        VBox layout = new VBox(10, textArea, btnClose);
+        layout.setPadding(new Insets(10));
+        layout.setAlignment(Pos.CENTER);
+
+        Scene scene = new Scene(layout, 500, 300);
+        dialog.setScene(scene);
+        dialog.show();
     }
 }
