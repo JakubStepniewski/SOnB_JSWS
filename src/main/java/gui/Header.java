@@ -61,13 +61,21 @@ public class Header {
         switch (selectedRAID)
         {
             case 1: // RAID 0
+                long startTimeRaid0 = System.nanoTime();
                 raid_0.writeData();
+                long endTimeRaid0 = System.nanoTime();
+                double elapsedMillisRaid0 = (endTimeRaid0 - startTimeRaid0) / 1_000_000.0;
+                System.out.printf("RAID 0 – Write time: %.3f ms%n", elapsedMillisRaid0);
                 break;
             case 2: // RAID 1
                 raid_1.writeData();
                 break;
             case 3: // RAID 3
+                long startTime = System.nanoTime();
                 raid_3.writeData();
+                long endTime = System.nanoTime();
+                double elapsedMillis = (endTime - startTime) / 1_000_000.0;
+                System.out.printf("RAID 3 – Write time: %.3f ms%n", elapsedMillis);
                 break;
             default:
                 System.out.println("RAID MODE NOT SELECTED!");

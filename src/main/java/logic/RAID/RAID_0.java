@@ -56,6 +56,8 @@ public class RAID_0 {
                 return;
             }
 
+            long startTime = System.nanoTime(); // start pomiaru
+
             int i = 0;
             while (i < dataBytes.length) {
                 for (Disk disk : activeDisks) {
@@ -71,6 +73,10 @@ public class RAID_0 {
                 }
             }
 
+            long endTime = System.nanoTime(); // koniec pomiaru
+            double elapsedMillis = (endTime - startTime) / 1_000_000.0;
+            System.out.printf("RAID 0 – Write time: %.3f ms%n", elapsedMillis);
+
             System.out.println("RAID 0 write complete (with multi-line support).");
             dialogWindow.close();
         });
@@ -80,6 +86,7 @@ public class RAID_0 {
         dialogWindow.setScene(scene);
         dialogWindow.show();
     }
+
 
 
 

@@ -15,6 +15,9 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
+import java.nio.charset.StandardCharsets;
+
+
 public class RAID_3 {
     private final List<Disk> diskList;
     private final int parityIndex;
@@ -45,6 +48,8 @@ public class RAID_3 {
             int dataDisks = diskList.size() - 1;
             int i = 0;
 
+            long startTime = System.nanoTime(); // start pomiaru czasu
+
             while (i < dataBytes.length) {
                 byte[][] chunks = new byte[dataDisks][sectorSize];
                 byte[] parityChunk = new byte[sectorSize];
@@ -68,6 +73,10 @@ public class RAID_3 {
                 diskList.get(parityIndex).write(parityChunk);
             }
 
+            long endTime = System.nanoTime(); // koniec pomiaru czasu
+            double elapsedMillis = (endTime - startTime) / 1_000_000.0;
+            System.out.printf("RAID 3 – Write time: %.3f ms%n", elapsedMillis);
+
             System.out.println("Data successfully written using RAID 3.");
             dialog.close();
         });
@@ -83,65 +92,57 @@ public class RAID_3 {
 
 
     public void readData() {
-        int parityIndex = diskList.size() - 1;
-        int sectorSize = diskList.get(0).getSectorSize();
-
-        // Zbieraj dane z dysków
-        byte[][] data = new byte[diskList.size()][];
-        int missingIndex = -1;
-
-        for (int i = 0; i < diskList.size(); i++) {
-            data[i] = diskList.get(i).read();
-            if (i != parityIndex && data[i].length == 0 && missingIndex == -1) {
-                missingIndex = i;
-            } else if (i != parityIndex && data[i].length == 0 && missingIndex != -1) {
-                showTextDialog("RAID 3 ERROR", "Too many failed disks! Cannot recover.");
-                return;
-            }
-        }
-
-        // Rekonstrukcja
-        if (missingIndex != -1) {
-            System.out.println("Auto-reconstructing disk " + missingIndex + " using XOR.");
-
-            int blockCount = data[parityIndex].length;
-            byte[] recovered = new byte[blockCount];
-
-            for (int i = 0; i < blockCount; i++) {
-                byte xor = data[parityIndex][i];
-                for (int j = 0; j < diskList.size(); j++) {
-                    if (j != parityIndex && j != missingIndex && i < data[j].length) {
-                        xor ^= data[j][i];
-                    }
-                }
-                recovered[i] = xor;
-            }
-
-            data[missingIndex] = recovered;
-            diskList.get(missingIndex).write(recovered);
-            System.out.println("Disk " + missingIndex + " reconstructed.");
-        }
-
-        // Sklej dane z dysków danych
+        int dataDisks = diskList.size() - 1;
+        int numSectors = diskList.get(0).getNumSectors();
         StringBuilder result = new StringBuilder();
-        int i = 0;
-        boolean dataLeft = true;
 
-        while (dataLeft) {
-            dataLeft = false;
+        for (int s = 0; s < numSectors; s++) {
+            int missingIndex = -1;
+            byte[][] sectorData = new byte[diskList.size()][];
+
+            // Zbieranie danych z sektorów
             for (int d = 0; d < diskList.size(); d++) {
-                if (d == parityIndex) continue;
-                byte[] dData = data[d];
-                if (i + sectorSize <= dData.length) {
-                    result.append(new String(dData, i, sectorSize));
-                    dataLeft = true;
+                Disk disk = diskList.get(d);
+                if (!disk.isActive() || disk.isSectorBad(s)) {
+                    if (d == parityIndex) continue; // pomiń XOR
+                    if (missingIndex == -1) {
+                        missingIndex = d;
+                    } else {
+                        showTextDialog("RAID 3 ERROR", "More than one failed data disk at sector " + s + " – cannot recover.");
+                        return;
+                    }
+                } else {
+                    sectorData[d] = disk.readSector(s);
                 }
             }
-            i += sectorSize;
+
+            // Rekonstrukcja brakującego sektora danych
+            if (missingIndex != -1) {
+                byte[] reconstructed = new byte[sectorSize];
+                for (int i = 0; i < sectorSize; i++) {
+                    byte xor = 0;
+                    for (int d = 0; d < diskList.size(); d++) {
+                        if (d == parityIndex || d == missingIndex || sectorData[d] == null) continue;
+                        xor ^= sectorData[d][i];
+                    }
+                    xor ^= diskList.get(parityIndex).readSector(s)[i];
+                    reconstructed[i] = xor;
+                }
+                sectorData[missingIndex] = reconstructed;
+                diskList.get(missingIndex).writeSector(s, reconstructed);
+            }
+
+            // Sklej dane z dysków danych
+            for (int d = 0; d < dataDisks; d++) {
+                if (sectorData[d] != null) {
+                    result.append(new String(sectorData[d], StandardCharsets.UTF_8));
+                }
+            }
         }
 
-        showTextDialog("RAID 3 – Read Data", result.toString().trim());
+        showTextDialog("RAID 3 – Read Data", result.toString());
     }
+
 
     private void showTextDialog(String title, String content) {
         Stage dialog = new Stage();
@@ -163,5 +164,4 @@ public class RAID_3 {
         dialog.setScene(scene);
         dialog.show();
     }
-
 }
