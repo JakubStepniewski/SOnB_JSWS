@@ -14,6 +14,9 @@ import logic.Disk;
 import java.util.List;
 import java.util.Optional;
 
+import java.nio.charset.StandardCharsets;
+
+
 public class RAID_0 {
     private final List<Disk> diskList;
 
@@ -25,22 +28,31 @@ public class RAID_0 {
     }
 
     public void writeData() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Write Data");
-        dialog.setHeaderText("Enter the data to write:");
-        Optional<String> result = dialog.showAndWait();
+        Stage dialogWindow = new Stage();
+        dialogWindow.initModality(Modality.APPLICATION_MODAL);
+        dialogWindow.setTitle("Write Data");
 
-        result.ifPresent(data -> {
-            byte[] dataBytes = data.getBytes();
+        VBox dialogVBox = new VBox(10);
+        dialogVBox.setAlignment(Pos.CENTER);
+        dialogVBox.setPadding(new Insets(10));
+
+        TextArea textArea = new TextArea();
+        textArea.setWrapText(true);
+        textArea.setPromptText("Enter multi-line data here...");
+
+        Button btnSave = new Button("Save");
+        btnSave.setOnAction(event -> {
+            String data = textArea.getText();
+            byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
             int sectorSize = diskList.get(0).getSectorSize();
 
-            // Lista tylko aktywnych dysków
             List<Disk> activeDisks = diskList.stream()
                     .filter(Disk::isActive)
                     .toList();
 
             if (activeDisks.size() < 2) {
                 System.out.println("Not enough active disks for RAID 0 write.");
+                dialogWindow.close();
                 return;
             }
 
@@ -59,43 +71,50 @@ public class RAID_0 {
                 }
             }
 
-            System.out.println("RAID 0 write complete (partial striping on active disks).");
+            System.out.println("RAID 0 write complete (with multi-line support).");
+            dialogWindow.close();
         });
+
+        dialogVBox.getChildren().addAll(textArea, btnSave);
+        Scene scene = new Scene(dialogVBox, 400, 250);
+        dialogWindow.setScene(scene);
+        dialogWindow.show();
     }
+
 
 
 
     public void readData() {
         StringBuilder result = new StringBuilder();
         int sectorSize = diskList.get(0).getSectorSize();
+        int maxLength = 0;
 
-        // Odczytaj dane z dysków
+        // Wczytaj dane z każdego dysku
         byte[][] allData = new byte[diskList.size()][];
         for (int i = 0; i < diskList.size(); i++) {
             allData[i] = diskList.get(i).read();
+            maxLength = Math.max(maxLength, allData[i].length);
         }
 
-        int i = 0;
-        boolean dataLeft = true;
-
-        while (dataLeft) {
-            dataLeft = false;
-            for (int d = 0; d < diskList.size(); d++) {
-                byte[] diskData = allData[d];
-                if (i + sectorSize <= diskData.length) {
-                    dataLeft = true;
-                    result.append(new String(diskData, i, sectorSize));
+        // Składanie danych z RAID 0 - striping
+        for (int i = 0; ; i++) {
+            boolean anyData = false;
+            for (byte[] diskData : allData) {
+                int start = i * sectorSize;
+                if (start + sectorSize <= diskData.length) {
+                    result.append(new String(diskData, start, sectorSize, StandardCharsets.UTF_8));
+                    anyData = true;
                 }
             }
-            i += sectorSize;
+            if (!anyData) break;
         }
 
-        // Wyświetl dane w oknie dialogowym
+        // Wyświetlenie wyniku
         Stage dialog = new Stage();
         dialog.initModality(Modality.APPLICATION_MODAL);
         dialog.setTitle("RAID 0 – Read Data");
 
-        TextArea textArea = new TextArea(result.toString().trim());
+        TextArea textArea = new TextArea(result.toString());
         textArea.setWrapText(true);
         textArea.setEditable(false);
 
@@ -110,9 +129,4 @@ public class RAID_0 {
         dialog.setScene(scene);
         dialog.show();
     }
-
-
-
-
-
 }

@@ -30,18 +30,22 @@ public class RAID_3 {
     }
 
     public void writeData() {
-        TextInputDialog dialog = new TextInputDialog();
+        Stage dialog = new Stage();
+        dialog.initModality(Modality.APPLICATION_MODAL);
         dialog.setTitle("Write Data");
-        dialog.setHeaderText("Enter the data to write:");
-        Optional<String> result = dialog.showAndWait();
 
-        result.ifPresent(data -> {
+        TextArea textArea = new TextArea();
+        textArea.setPromptText("Enter the data to write...");
+        textArea.setWrapText(true);
+
+        Button btnSave = new Button("Save");
+        btnSave.setOnAction(e -> {
+            String data = textArea.getText();
             byte[] dataBytes = data.getBytes();
             int dataDisks = diskList.size() - 1;
-
             int i = 0;
+
             while (i < dataBytes.length) {
-                // Przygotuj dane dla każdego dysku + oblicz parzystość
                 byte[][] chunks = new byte[dataDisks][sectorSize];
                 byte[] parityChunk = new byte[sectorSize];
 
@@ -54,7 +58,7 @@ public class RAID_3 {
                         i += blockSize;
 
                         for (int b = 0; b < sectorSize; b++) {
-                            parityChunk[b] ^= chunks[j][b]; // XOR
+                            parityChunk[b] ^= chunks[j][b];
                         }
 
                         diskList.get(j).write(chunks[j]);
@@ -65,8 +69,18 @@ public class RAID_3 {
             }
 
             System.out.println("Data successfully written using RAID 3.");
+            dialog.close();
         });
+
+        VBox layout = new VBox(10, textArea, btnSave);
+        layout.setPadding(new Insets(10));
+        layout.setAlignment(Pos.CENTER);
+
+        Scene scene = new Scene(layout, 400, 250);
+        dialog.setScene(scene);
+        dialog.show();
     }
+
 
     public void readData() {
         int parityIndex = diskList.size() - 1;

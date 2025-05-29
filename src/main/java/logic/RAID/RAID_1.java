@@ -1,9 +1,8 @@
 package logic.RAID;
 
 import logic.Disk;
-import javafx.scene.control.TextInputDialog;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -24,13 +23,22 @@ public class RAID_1 {
     }
 
     public void writeData() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Write Data");
-        dialog.setHeaderText("Enter the data to write:");
-        Optional<String> result = dialog.showAndWait();
+        Stage dialogWindow = new Stage();
+        dialogWindow.initModality(Modality.APPLICATION_MODAL);
+        dialogWindow.setTitle("Write Data");
 
-        result.ifPresent(data -> {
-            byte[] dataBytes = data.getBytes();
+        VBox dialogVBox = new VBox(10);
+        dialogVBox.setAlignment(Pos.CENTER);
+        dialogVBox.setPadding(new Insets(10));
+
+        TextArea textArea = new TextArea();
+        textArea.setWrapText(true);
+        textArea.setPromptText("Enter multi-line data here...");
+
+        Button btnSave = new Button("Save");
+        btnSave.setOnAction(event -> {
+            String data = textArea.getText();
+            byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
 
             for (int i = 0; i < diskList.size(); i++) {
                 Disk disk = diskList.get(i);
@@ -43,7 +51,13 @@ public class RAID_1 {
             }
 
             System.out.println("RAID 1 write completed (partial if some disks were inactive).");
+            dialogWindow.close();
         });
+
+        dialogVBox.getChildren().addAll(textArea, btnSave);
+        Scene scene = new Scene(dialogVBox, 400, 250);
+        dialogWindow.setScene(scene);
+        dialogWindow.show();
     }
 
     public void readData() {
@@ -52,35 +66,33 @@ public class RAID_1 {
         int numSectors = diskList.get(0).getNumSectors();
         int sectorSize = diskList.get(0).getSectorSize();
 
-        // Rekonstrukcja sektorów
-        for (int i = 0; i < diskList.size(); i += 2) {
-            Disk a = diskList.get(i);
-            Disk b = diskList.get(i + 1);
+        for (int i = 0; i < diskList.size(); i++) {
+            Disk target = diskList.get(i);
+            if (!target.isActive()) continue;
 
             for (int s = 0; s < numSectors; s++) {
-                boolean aBad = a.isSectorBad(s);
-                boolean bBad = b.isSectorBad(s);
-                boolean aFull = a.isSectorFull(s);
-                boolean bFull = b.isSectorFull(s);
+                if (!target.isSectorFull(s) || target.isSectorBad(s)) {
+                    for (int j = 0; j < diskList.size(); j++) {
+                        if (i == j) continue;
+                        Disk source = diskList.get(j);
 
-                if (aBad && bFull && !bBad) {
-                    byte[] data = b.readSector(s);
-                    a.writeSector(s, data);
-                    System.out.println("Reconstructed sector " + s + " on disk " + i);
-                } else if (bBad && aFull && !aBad) {
-                    byte[] data = a.readSector(s);
-                    b.writeSector(s, data);
-                    System.out.println("Reconstructed sector " + s + " on disk " + (i + 1));
+                        if (source.isActive() && source.isSectorFull(s) && !source.isSectorBad(s)) {
+                            byte[] data = source.readSector(s);
+                            target.writeSector(s, data);
+                            System.out.println("Reconstructed sector " + s + " on disk " + i + " from disk " + j);
+                            break;
+                        }
+                    }
                 }
             }
         }
 
-        // Odczyt danych z pierwszego dostępnego, aktywnego dysku
-        for (Disk d : diskList) {
+        for (int i = 0; i < diskList.size(); i++) {
+            Disk d = diskList.get(i);
             if (d.isActive()) {
-                byte[] data = d.read(); // teraz powinno być naprawione
+                byte[] data = d.read();
                 if (data.length > 0 && !isEmptyOrZero(data)) {
-                    showTextDialog("RAID 1 – Read Data", new String(data).trim());
+                    showTextDialog("RAID 1 – Read Data (Disk " + i + ")", new String(data, StandardCharsets.UTF_8).trim());
                     return;
                 }
             }
@@ -88,7 +100,6 @@ public class RAID_1 {
 
         showTextDialog("RAID 1 – Read Data", "[no data found]");
     }
-
 
     private boolean isEmptyOrZero(byte[] data) {
         if (data == null || data.length == 0) return true;

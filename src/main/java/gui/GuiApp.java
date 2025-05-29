@@ -72,7 +72,7 @@ public class GuiApp extends Application {
         root.getChildren().addAll(header.render(),scrollPane);
 
         // Final scene
-        Scene scene = new Scene(root, 1000, 600);
+        Scene scene = new Scene(root, 1000, 865);
         primaryStage.setScene(scene);
         primaryStage.show();
     }

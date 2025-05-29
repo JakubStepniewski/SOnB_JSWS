@@ -16,6 +16,9 @@ import java.util.Arrays;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import java.nio.charset.StandardCharsets;
+
+
 public class Disk {
     private final int numSectors;
     private final int sectorSize;
@@ -324,7 +327,7 @@ public class Disk {
 
     public void readAsStringDialog() {
         byte[] bytes = read();
-        String text = new String(bytes).trim();
+        String text = new String(bytes, StandardCharsets.UTF_8);
 
         Stage dialogWindow = new Stage();
         dialogWindow.initModality(Modality.APPLICATION_MODAL);

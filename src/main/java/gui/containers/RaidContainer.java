@@ -46,10 +46,15 @@ public class RaidContainer {
         raidContainer.setStroke(Color.WHITE);
         raidContainer.setStrokeWidth(2);
 
-        Text raidText = new Text("RAID " + (raidType-1));
-        raidText.setFont(Font.font(16));
-
-        stackPane.getChildren().addAll(raidContainer, raidText);
+        if(raidType != 3) {
+            Text raidText = new Text("RAID " + (raidType-1));
+            raidText.setFont(Font.font(16));
+            stackPane.getChildren().addAll(raidContainer, raidText);
+        }else {
+            Text raidText = new Text("RAID " + (raidType));
+            raidText.setFont(Font.font(16));
+            stackPane.getChildren().addAll(raidContainer, raidText);
+        }
         return stackPane;
     }
 
