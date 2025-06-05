@@ -3,6 +3,11 @@ package logic.RAID;
 import logic.Disk;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -38,19 +43,7 @@ public class RAID_1 {
         Button btnSave = new Button("Save");
         btnSave.setOnAction(event -> {
             String data = textArea.getText();
-            byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
-
-            for (int i = 0; i < diskList.size(); i++) {
-                Disk disk = diskList.get(i);
-                if (disk.isActive()) {
-                    disk.write(dataBytes);
-                    System.out.println("Written to disk " + i);
-                } else {
-                    System.out.println("Skipped disk " + i + " (inactive)");
-                }
-            }
-
-            System.out.println("RAID 1 write completed (partial if some disks were inactive).");
+            writeDataInternal(data);
             dialogWindow.close();
         });
 
@@ -60,7 +53,23 @@ public class RAID_1 {
         dialogWindow.show();
     }
 
-    public void readData() {
+    private synchronized void writeDataInternal(String data) {
+        byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
+
+        for (int i = 0; i < diskList.size(); i++) {
+            Disk disk = diskList.get(i);
+            if (disk.isActive()) {
+                disk.write(dataBytes);
+                System.out.println("Written to disk " + i);
+            } else {
+                System.out.println("Skipped disk " + i + " (inactive)");
+            }
+        }
+
+        System.out.println("RAID 1 write completed (partial if some disks were inactive).");
+    }
+
+    public synchronized void readData() {
         System.out.println("RAID 1 – Reading with sector-level recovery");
 
         int numSectors = diskList.get(0).getNumSectors();
@@ -99,6 +108,47 @@ public class RAID_1 {
         }
 
         showTextDialog("RAID 1 – Read Data", "[no data found]");
+    }
+
+    public void simulateLoadMultithreaded(int threads, int repetitionsPerThread, int dataSize) {
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        Random random = new Random();
+        long startTime = System.nanoTime();
+
+        for (int t = 0; t < threads; t++) {
+            executor.submit(() -> {
+                for (int i = 0; i < repetitionsPerThread; i++) {
+                    byte[] data = new byte[dataSize];
+                    random.nextBytes(data);
+                    String input = new String(data, StandardCharsets.UTF_8);
+
+                    synchronized (this) {
+                        writeDataInternal(input);
+                        readData();
+                        resetDisks();
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(10, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        double totalMs = (endTime - startTime) / 1_000_000.0;
+        showTextDialog("RAID 1 – Load Simulation",
+                String.format("Threads: %d\nRepetitions/thread: %d\nData size: %d bytes\n\nTotal time: %.2f ms",
+                        threads, repetitionsPerThread, dataSize, totalMs));
+    }
+
+    private void resetDisks() {
+        for (Disk disk : diskList) {
+            disk.reset();
+        }
     }
 
     private boolean isEmptyOrZero(byte[] data) {

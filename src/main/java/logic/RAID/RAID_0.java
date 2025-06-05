@@ -5,17 +5,17 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import logic.Disk;
 
-import java.util.List;
-import java.util.Optional;
-
 import java.nio.charset.StandardCharsets;
-
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class RAID_0 {
     private final List<Disk> diskList;
@@ -42,42 +42,7 @@ public class RAID_0 {
 
         Button btnSave = new Button("Save");
         btnSave.setOnAction(event -> {
-            String data = textArea.getText();
-            byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
-            int sectorSize = diskList.get(0).getSectorSize();
-
-            List<Disk> activeDisks = diskList.stream()
-                    .filter(Disk::isActive)
-                    .toList();
-
-            if (activeDisks.size() < 2) {
-                System.out.println("Not enough active disks for RAID 0 write.");
-                dialogWindow.close();
-                return;
-            }
-
-            long startTime = System.nanoTime(); // start pomiaru
-
-            int i = 0;
-            while (i < dataBytes.length) {
-                for (Disk disk : activeDisks) {
-                    if (i >= dataBytes.length) break;
-
-                    int remaining = dataBytes.length - i;
-                    int blockSize = Math.min(sectorSize, remaining);
-                    byte[] chunk = new byte[blockSize];
-                    System.arraycopy(dataBytes, i, chunk, 0, blockSize);
-
-                    disk.write(chunk);
-                    i += blockSize;
-                }
-            }
-
-            long endTime = System.nanoTime(); // koniec pomiaru
-            double elapsedMillis = (endTime - startTime) / 1_000_000.0;
-            System.out.printf("RAID 0 – Write time: %.3f ms%n", elapsedMillis);
-
-            System.out.println("RAID 0 write complete (with multi-line support).");
+            writeDataInternal(textArea.getText());
             dialogWindow.close();
         });
 
@@ -87,23 +52,50 @@ public class RAID_0 {
         dialogWindow.show();
     }
 
+    private synchronized void writeDataInternal(String data) {
+        byte[] dataBytes = data.getBytes(StandardCharsets.UTF_8);
+        int sectorSize = diskList.get(0).getSectorSize();
 
+        List<Disk> activeDisks = diskList.stream()
+                .filter(Disk::isActive)
+                .toList();
 
+        if (activeDisks.size() < 2) {
+            System.out.println("Not enough active disks for RAID 0 write.");
+            return;
+        }
 
+        long startTime = System.nanoTime();
+        int i = 0;
+        while (i < dataBytes.length) {
+            for (Disk disk : activeDisks) {
+                if (i >= dataBytes.length) break;
 
-    public void readData() {
+                int remaining = dataBytes.length - i;
+                int blockSize = Math.min(sectorSize, remaining);
+                byte[] chunk = new byte[blockSize];
+                System.arraycopy(dataBytes, i, chunk, 0, blockSize);
+
+                disk.write(chunk);
+                i += blockSize;
+            }
+        }
+        long endTime = System.nanoTime();
+        double elapsedMillis = (endTime - startTime) / 1_000_000.0;
+        System.out.printf("RAID 0 – Write time: %.3f ms%n", elapsedMillis);
+    }
+
+    public synchronized void readData() {
         StringBuilder result = new StringBuilder();
         int sectorSize = diskList.get(0).getSectorSize();
         int maxLength = 0;
 
-        // Wczytaj dane z każdego dysku
         byte[][] allData = new byte[diskList.size()][];
         for (int i = 0; i < diskList.size(); i++) {
             allData[i] = diskList.get(i).read();
             maxLength = Math.max(maxLength, allData[i].length);
         }
 
-        // Składanie danych z RAID 0 - striping
         for (int i = 0; ; i++) {
             boolean anyData = false;
             for (byte[] diskData : allData) {
@@ -116,12 +108,56 @@ public class RAID_0 {
             if (!anyData) break;
         }
 
-        // Wyświetlenie wyniku
+        showTextDialog("RAID 0 – Read Data", result.toString());
+    }
+
+    public void simulateLoadMultithreaded(int threads, int repetitionsPerThread, int dataSize) {
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        Random random = new Random();
+        long startTime = System.nanoTime();
+
+        for (int t = 0; t < threads; t++) {
+            executor.submit(() -> {
+                for (int i = 0; i < repetitionsPerThread; i++) {
+                    byte[] data = new byte[dataSize];
+                    random.nextBytes(data);
+                    String input = new String(data, StandardCharsets.UTF_8);
+
+                    synchronized (this) {
+                        writeDataInternal(input);
+                        readData();
+                        resetDisks();
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(10, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        double totalMs = (endTime - startTime) / 1_000_000.0;
+        showTextDialog("RAID 0 – Load Simulation",
+                String.format("Threads: %d\nRepetitions/thread: %d\nData size: %d bytes\n\nTotal time: %.2f ms",
+                        threads, repetitionsPerThread, dataSize, totalMs));
+    }
+
+    private void resetDisks() {
+        for (Disk disk : diskList) {
+            disk.reset();
+        }
+    }
+
+    private void showTextDialog(String title, String content) {
         Stage dialog = new Stage();
         dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.setTitle("RAID 0 – Read Data");
+        dialog.setTitle(title);
 
-        TextArea textArea = new TextArea(result.toString());
+        TextArea textArea = new TextArea(content);
         textArea.setWrapText(true);
         textArea.setEditable(false);
 

@@ -1,22 +1,22 @@
 package logic.RAID;
 
-import javafx.scene.control.TextInputDialog;
-import logic.Disk;
-
-import java.util.List;
-import java.util.Optional;
-
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.Button;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.Button;
+import javafx.scene.Scene;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+
+import logic.Disk;
 
 import java.nio.charset.StandardCharsets;
-
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class RAID_3 {
     private final List<Disk> diskList;
@@ -28,8 +28,8 @@ public class RAID_3 {
             throw new IllegalArgumentException("RAID 3 requires at least 3 disks (2 data + 1 parity).");
         }
         this.diskList = disks;
-        this.parityIndex = disks.size() - 1; // ostatni dysk = parity
-        this.sectorSize = disks.get(0).getSectorSize(); // zakładamy równe sektory
+        this.parityIndex = disks.size() - 1;
+        this.sectorSize = disks.get(0).getSectorSize();
     }
 
     public void writeData() {
@@ -43,41 +43,7 @@ public class RAID_3 {
 
         Button btnSave = new Button("Save");
         btnSave.setOnAction(e -> {
-            String data = textArea.getText();
-            byte[] dataBytes = data.getBytes();
-            int dataDisks = diskList.size() - 1;
-            int i = 0;
-
-            long startTime = System.nanoTime(); // start pomiaru czasu
-
-            while (i < dataBytes.length) {
-                byte[][] chunks = new byte[dataDisks][sectorSize];
-                byte[] parityChunk = new byte[sectorSize];
-
-                for (int j = 0; j < dataDisks; j++) {
-                    int remaining = dataBytes.length - i;
-                    int blockSize = Math.min(sectorSize, remaining);
-
-                    if (blockSize > 0) {
-                        System.arraycopy(dataBytes, i, chunks[j], 0, blockSize);
-                        i += blockSize;
-
-                        for (int b = 0; b < sectorSize; b++) {
-                            parityChunk[b] ^= chunks[j][b];
-                        }
-
-                        diskList.get(j).write(chunks[j]);
-                    }
-                }
-
-                diskList.get(parityIndex).write(parityChunk);
-            }
-
-            long endTime = System.nanoTime(); // koniec pomiaru czasu
-            double elapsedMillis = (endTime - startTime) / 1_000_000.0;
-            System.out.printf("RAID 3 – Write time: %.3f ms%n", elapsedMillis);
-
-            System.out.println("Data successfully written using RAID 3.");
+            writeDataInternal(textArea.getText());
             dialog.close();
         });
 
@@ -90,8 +56,41 @@ public class RAID_3 {
         dialog.show();
     }
 
+    private synchronized void writeDataInternal(String data) {
+        byte[] dataBytes = data.getBytes();
+        int dataDisks = diskList.size() - 1;
+        int i = 0;
+        long startTime = System.nanoTime();
 
-    public void readData() {
+        while (i < dataBytes.length) {
+            byte[][] chunks = new byte[dataDisks][sectorSize];
+            byte[] parityChunk = new byte[sectorSize];
+
+            for (int j = 0; j < dataDisks; j++) {
+                int remaining = dataBytes.length - i;
+                int blockSize = Math.min(sectorSize, remaining);
+
+                if (blockSize > 0) {
+                    System.arraycopy(dataBytes, i, chunks[j], 0, blockSize);
+                    i += blockSize;
+
+                    for (int b = 0; b < sectorSize; b++) {
+                        parityChunk[b] ^= chunks[j][b];
+                    }
+
+                    diskList.get(j).write(chunks[j]);
+                }
+            }
+
+            diskList.get(parityIndex).write(parityChunk);
+        }
+
+        long endTime = System.nanoTime();
+        double elapsedMillis = (endTime - startTime) / 1_000_000.0;
+        System.out.printf("RAID 3 – Write time: %.3f ms%n", elapsedMillis);
+    }
+
+    public synchronized void readData() {
         int dataDisks = diskList.size() - 1;
         int numSectors = diskList.get(0).getNumSectors();
         StringBuilder result = new StringBuilder();
@@ -100,11 +99,10 @@ public class RAID_3 {
             int missingIndex = -1;
             byte[][] sectorData = new byte[diskList.size()][];
 
-            // Zbieranie danych z sektorów
             for (int d = 0; d < diskList.size(); d++) {
                 Disk disk = diskList.get(d);
                 if (!disk.isActive() || disk.isSectorBad(s)) {
-                    if (d == parityIndex) continue; // pomiń XOR
+                    if (d == parityIndex) continue;
                     if (missingIndex == -1) {
                         missingIndex = d;
                     } else {
@@ -116,7 +114,6 @@ public class RAID_3 {
                 }
             }
 
-            // Rekonstrukcja brakującego sektora danych
             if (missingIndex != -1) {
                 byte[] reconstructed = new byte[sectorSize];
                 for (int i = 0; i < sectorSize; i++) {
@@ -130,9 +127,37 @@ public class RAID_3 {
                 }
                 sectorData[missingIndex] = reconstructed;
                 diskList.get(missingIndex).writeSector(s, reconstructed);
+            } else {
+                byte[] parityCheck = new byte[sectorSize];
+                for (int d = 0; d < dataDisks; d++) {
+                    for (int i = 0; i < sectorSize; i++) {
+                        parityCheck[i] ^= sectorData[d][i];
+                    }
+                }
+
+                byte[] actualParity = diskList.get(parityIndex).readSector(s);
+                for (int i = 0; i < sectorSize; i++) {
+                    if (parityCheck[i] != actualParity[i]) {
+                        for (int suspect = 0; suspect < dataDisks; suspect++) {
+                            byte[] reconstructed = new byte[sectorSize];
+                            for (int j = 0; j < sectorSize; j++) {
+                                byte xor = actualParity[j];
+                                for (int d = 0; d < dataDisks; d++) {
+                                    if (d != suspect) {
+                                        xor ^= sectorData[d][j];
+                                    }
+                                }
+                                reconstructed[j] = xor;
+                            }
+                            sectorData[suspect] = reconstructed;
+                            diskList.get(suspect).writeSector(s, reconstructed);
+                            break;
+                        }
+                        break;
+                    }
+                }
             }
 
-            // Sklej dane z dysków danych
             for (int d = 0; d < dataDisks; d++) {
                 if (sectorData[d] != null) {
                     result.append(new String(sectorData[d], StandardCharsets.UTF_8));
@@ -141,6 +166,48 @@ public class RAID_3 {
         }
 
         showTextDialog("RAID 3 – Read Data", result.toString());
+    }
+
+    public void simulateLoadMultithreaded(int threads, int repetitionsPerThread, int dataSize) {
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        Random random = new Random();
+        long startTime = System.nanoTime();
+
+        for (int t = 0; t < threads; t++) {
+            executor.submit(() -> {
+                for (int i = 0; i < repetitionsPerThread; i++) {
+                    byte[] data = new byte[dataSize];
+                    random.nextBytes(data);
+                    String input = new String(data, StandardCharsets.UTF_8);
+
+                    synchronized (this) {
+                        writeDataInternal(input);
+                        readData();
+                        resetDisks(); // dodajemy czyszczenie po każdej operacji
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(10, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        long endTime = System.nanoTime();
+        double totalMs = (endTime - startTime) / 1_000_000.0;
+        showTextDialog("RAID 3 – Load Simulation",
+                String.format("Threads: %d\nRepetitions/thread: %d\nData size: %d bytes\n\nTotal time: %.2f ms",
+                        threads, repetitionsPerThread, dataSize, totalMs));
+    }
+
+
+    private void resetDisks() {
+        for (Disk disk : diskList) {
+            disk.reset();
+        }
     }
 
 
@@ -165,3 +232,5 @@ public class RAID_3 {
         dialog.show();
     }
 }
+
+

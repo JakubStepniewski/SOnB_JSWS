@@ -44,7 +44,11 @@ public class Header {
         btnReset.setOnMouseClicked(event -> resetAllDisks());
         btnRead.setOnMouseClicked(event -> readData());
 
-        hContainer.getChildren().addAll(btnWrite,btnRead,btnReset);
+        Button btnSimulateLoad = new Button("Simulate Multi-Load");
+        btnSimulateLoad.setOnMouseClicked(event -> simulateMultithreadedLoad());
+
+
+        hContainer.getChildren().addAll(btnWrite, btnRead, btnReset, btnSimulateLoad);
 
 
 
@@ -101,6 +105,28 @@ public class Header {
                 System.out.println("RAID MODE NOT SELECTED!");
         }
     }
+
+    public void simulateMultithreadedLoad() {
+        int selectedRAID = this.raidContainer.getActiveRAID();
+        int threads = 1000;
+        int repetitionsPerThread = 20;
+        int dataSize = 50; // bajtów
+
+        switch (selectedRAID) {
+            case 1:
+                raid_0.simulateLoadMultithreaded(threads, repetitionsPerThread, dataSize);
+                break;
+            case 2:
+                raid_1.simulateLoadMultithreaded(threads, repetitionsPerThread, dataSize);
+                break;
+            case 3:
+                raid_3.simulateLoadMultithreaded(threads, repetitionsPerThread, dataSize);
+                break;
+            default:
+                System.out.println("RAID MODE NOT SELECTED!");
+        }
+    }
+
 
     private void resetAllDisks() {
         for (Disk disk : diskList) {
